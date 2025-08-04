@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 import base64
+import traceback  # ✅ 用于捕捉错误详情
 
 app = Flask(__name__)
 CORS(app)  # ✅ 启用跨域请求支持
@@ -21,27 +22,36 @@ def compare_images(img1, img2):
 
 @app.route("/", methods=["GET"])
 def hello():
-    return "PCB Image Compare API is running!"
+    return "✅ PCB Image Compare API is running!"
 
 @app.route("/compare", methods=["POST"])
 def compare():
-    if "img1" not in request.files or "img2" not in request.files:
-        return jsonify({"error": "Please upload both img1 and img2"}), 400
+    try:
+        if "img1" not in request.files or "img2" not in request.files:
+            return jsonify({"error": "Please upload both img1 and img2"}), 400
 
-    img1 = cv2.imdecode(np.frombuffer(request.files["img1"].read(), np.uint8), cv2.IMREAD_COLOR)
-    img2 = cv2.imdecode(np.frombuffer(request.files["img2"].read(), np.uint8), cv2.IMREAD_COLOR)
+        img1_file = request.files["img1"]
+        img2_file = request.files["img2"]
 
-    if img1 is None or img2 is None:
-        return jsonify({"error": "Failed to decode one or both images."}), 400
+        img1 = cv2.imdecode(np.frombuffer(img1_file.read(), np.uint8), cv2.IMREAD_COLOR)
+        img2 = cv2.imdecode(np.frombuffer(img2_file.read(), np.uint8), cv2.IMREAD_COLOR)
 
-    score, diff = compare_images(img1, img2)
-    _, buffer = cv2.imencode('.jpg', diff)
-    encoded_diff = base64.b64encode(buffer).decode()
+        if img1 is None or img2 is None:
+            return jsonify({"error": "Failed to decode one or both images."}), 400
 
-    return jsonify({
-        "score": float(score),
-        "diff_image": encoded_diff
-    })
+        score, diff = compare_images(img1, img2)
+        _, buffer = cv2.imencode('.jpg', diff)
+        encoded_diff = base64.b64encode(buffer).decode()
+
+        return jsonify({
+            "score": float(score),
+            "diff_image": encoded_diff
+        })
+
+    except Exception as e:
+        traceback_str = traceback.format_exc()
+        print(traceback_str)  # ✅ 输出到 server logs
+        return jsonify({"error": "Internal server error", "details": traceback_str}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
