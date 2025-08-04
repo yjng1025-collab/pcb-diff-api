@@ -9,6 +9,10 @@ app = Flask(__name__)
 CORS(app)  # ✅ 启用跨域请求支持
 
 def compare_images(img1, img2):
+    # 将 img2 调整为与 img1 相同大小
+    if img1.shape[:2] != img2.shape[:2]:
+        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+
     grayA = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     grayB = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
     score, diff = ssim(grayA, grayB, full=True)
@@ -26,6 +30,9 @@ def compare():
 
     img1 = cv2.imdecode(np.frombuffer(request.files["img1"].read(), np.uint8), cv2.IMREAD_COLOR)
     img2 = cv2.imdecode(np.frombuffer(request.files["img2"].read(), np.uint8), cv2.IMREAD_COLOR)
+
+    if img1 is None or img2 is None:
+        return jsonify({"error": "Failed to decode one or both images."}), 400
 
     score, diff = compare_images(img1, img2)
     _, buffer = cv2.imencode('.jpg', diff)
