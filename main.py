@@ -8,7 +8,7 @@ import base64
 app = Flask(__name__)
 CORS(app)
 
-def compare_images_and_mark(img1, img2):
+def compare_images_and_mark(img1, img2, min_area=500):
     # 调整 img2 尺寸与 img1 一致
     if img1.shape[:2] != img2.shape[:2]:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
@@ -25,7 +25,8 @@ def compare_images_and_mark(img1, img2):
     # 在学生图像上画出差异
     marked_img = img2.copy()
     for c in contours:
-        if cv2.contourArea(c) > 100:  # 忽略太小的区域
+        area = cv2.contourArea(c)
+        if area > min_area:  # 忽略太小的区域
             x, y, w, h = cv2.boundingRect(c)
             cv2.rectangle(marked_img, (x, y), (x + w, y + h), (0, 0, 255), 2)
 
