@@ -1,10 +1,12 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import cv2
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 import base64
 
 app = Flask(__name__)
+CORS(app)  # ✅ 启用跨域请求支持
 
 def compare_images(img1, img2):
     grayA = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
@@ -33,3 +35,6 @@ def compare():
         "score": float(score),
         "diff_image": encoded_diff
     })
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
