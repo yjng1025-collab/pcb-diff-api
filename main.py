@@ -1,0 +1,35 @@
+from flask import Flask, request, jsonify
+import cv2
+import numpy as np
+from skimage.metrics import structural_similarity as ssim
+import base64
+
+app = Flask(__name__)
+
+def compare_images(img1, img2):
+    grayA = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    grayB = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    score, diff = ssim(grayA, grayB, full=True)
+    diff = (diff * 255).astype("uint8")
+    return score, diff
+
+@app.route("/", methods=["GET"])
+def hello():
+    return "PCB Image Compare API is running!"
+
+@app.route("/compare", methods=["POST"])
+def compare():
+    if "img1" not in request.files or "img2" not in request.files:
+        return jsonify({"error": "Please upload both img1 and img2"}), 400
+
+    img1 = cv2.imdecode(np.frombuffer(request.files["img1"].read(), np.uint8), cv2.IMREAD_COLOR)
+    img2 = cv2.imdecode(np.frombuffer(request.files["img2"].read(), np.uint8), cv2.IMREAD_COLOR)
+
+    score, diff = compare_images(img1, img2)
+    _, buffer = cv2.imencode('.jpg', diff)
+    encoded_diff = base64.b64encode(buffer).decode()
+
+    return jsonify({
+        "score": float(score),
+        "diff_image": encoded_diff
+    })
