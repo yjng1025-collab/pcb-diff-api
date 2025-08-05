@@ -1,0 +1,15 @@
+{
+  "name": "PCB Auto Compare",
+  "description": "上传学生贴装的图片，与标准 PCB 图像进行自动比对并返回差异",
+  "url": "https://pcb-diff-api-production.up.railway.app/compare_auto",
+  "method": "POST",
+  "contentType": "multipart/form-data",
+  "parameters": [
+    {
+      "name": "student_image",
+      "type": "file",
+      "required": true,
+      "description": "学生上传的电路板图像"
+    }
+  ]
+}

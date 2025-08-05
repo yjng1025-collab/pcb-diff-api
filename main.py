@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import cv2
 import numpy as np
@@ -9,7 +9,7 @@ import base64
 app = Flask(__name__)
 CORS(app)
 
-STANDARD_IMAGES_DIR = "./standard_boards"  # 可改为你本地的标准图片目录
+STANDARD_IMAGES_DIR = "./standard_boards"
 
 def compare_images_and_mark(img1, img2):
     if img1.shape[:2] != img2.shape[:2]:
@@ -94,5 +94,11 @@ def compare_auto():
         "matched_standard": best_std_name
     })
 
+# ✅ Serve compare_auto.json to Coze
+@app.route("/static/<path:filename>")
+def serve_static(filename):
+    return send_from_directory("static", filename)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
+
