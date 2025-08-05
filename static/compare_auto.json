@@ -1,15 +1,60 @@
 {
-  "name": "PCB_Compare_Tool",
-  "description": "上传学生贴装图像，与标准 PCB 自动对比，返回差异图和匹配结果。",
-  "url": "https://pcb-diff-api-production.up.railway.app/compare_auto",
-  "method": "POST",
-  "contentType": "multipart/form-data",
-  "parameters": [
-    {
-      "name": "img",
-      "type": "file",
-      "required": true,
-      "description": "学生上传的 PCB 图片"
+  "openapi": "3.0.0",
+  "info": {
+    "title": "PCB Compare Tool",
+    "description": "用于检测学生上传的 PCB 图片与标准板的差异区域。",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/compare_auto": {
+      "post": {
+        "summary": "自动比对 PCB 差异",
+        "description": "上传学生电路板图片，自动与标准板对比，返回差异标记图。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "学生上传的电路板图片"
+                  }
+                },
+                "required": ["image"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "比对结果（含差异图与坐标）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "diff_image_base64": {
+                      "type": "string",
+                      "description": "打标后的差异图（Base64）"
+                    },
+                    "diff_coords": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": { "type": "integer" }
+                      },
+                      "description": "差异区域的坐标列表"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
-  ]
+  }
 }
