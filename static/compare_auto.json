@@ -2,14 +2,14 @@
   "openapi": "3.0.0",
   "info": {
     "title": "PCB Compare Tool",
-    "description": "用于检测学生上传的 PCB 图片与标准板的差异区域。",
+    "description": "用于检测学生上传的 PCB 图片与标准板的差异区域，可上传文件或提供图片链接。",
     "version": "1.0.0"
   },
   "paths": {
     "/compare_auto": {
       "post": {
         "summary": "自动比对 PCB 差异",
-        "description": "上传学生电路板图片，自动与标准板对比，返回差异标记图。",
+        "description": "上传学生电路板图片或图片链接，自动与标准板对比，返回差异标记图和相似度得分。",
         "requestBody": {
           "required": true,
           "content": {
@@ -20,7 +20,19 @@
                   "image": {
                     "type": "string",
                     "format": "binary",
-                    "description": "学生上传的电路板图片"
+                    "description": "学生上传的电路板图片（文件）"
+                  }
+                },
+                "required": ["image"]
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "description": "学生上传的电路板图片链接（URL）"
                   }
                 },
                 "required": ["image"]
@@ -38,11 +50,20 @@
                   "properties": {
                     "similarity": {
                       "type": "number",
-                      "description": "两张图片的相似度得分"
+                      "description": "两张图片的相似度得分（0~1）"
                     },
                     "diff_coordinates": {
-                      "type": "string",
-                      "description": "差异区域坐标的 JSON 字符串"
+                      "type": "array",
+                      "description": "差异区域的矩形坐标",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "x": { "type": "integer" },
+                          "y": { "type": "integer" },
+                          "w": { "type": "integer" },
+                          "h": { "type": "integer" }
+                        }
+                      }
                     },
                     "result_image_base64": {
                       "type": "string",
@@ -56,11 +77,38 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "请求错误，如缺少图片或下载失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" }
+                  }
+                }
+              }
+            }
           }
         }
       }
     }
   }
 }
+
 
 
