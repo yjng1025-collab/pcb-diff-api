@@ -102,12 +102,24 @@ def compare_auto():
     server_url = request.host_url.rstrip("/")  # 去除末尾斜杠
     image_url = f"{server_url}/static/{output_filename}"
 
+    # ✅ 生成差异描述（description）
+    num_diffs = len(differences)
+    if num_diffs == 0:
+        description = "未发现明显差异"
+    elif num_diffs < 5:
+        description = f"发现 {num_diffs} 处轻微差异"
+    elif num_diffs < 15:
+        description = f"发现 {num_diffs} 处差异，分布较分散"
+    else:
+        description = f"发现 {num_diffs} 处差异，分布密集，可能存在较大问题"
+
     return jsonify({
         "matched_with": best_standard_name,
         "similarity": round(best_score, 4),
         "diff_image_url": image_url,
         "image": image_url,  # ✅ Coze-friendly 字段，自动渲染图片
-        "differences": differences
+        "differences": differences,
+        "description": description  # ✅ 新增字段
     })
 
 @app.route("/", methods=["GET"])
