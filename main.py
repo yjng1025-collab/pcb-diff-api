@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify 
 import os
 import base64
 import cv2
@@ -29,6 +29,8 @@ def load_image_from_url(url):
         return None
 
 def compare_images(img1, img2):
+    MIN_AREA = 100  # 忽略小于这个面积的差异区域（可根据需要调整）
+
     img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
@@ -49,7 +51,8 @@ def compare_images(img1, img2):
 
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
-        if w > 10 and h > 10:
+        area = cv2.contourArea(contour)
+        if w > 10 and h > 10 and area >= MIN_AREA:
             cv2.rectangle(result_img, (x, y), (x + w, y + h), (0, 0, 255), 2)
             differences.append({"x": int(x), "y": int(y), "width": int(w), "height": int(h)})
 
