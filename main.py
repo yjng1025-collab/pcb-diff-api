@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify 
+from flask import Flask, request, jsonify  
 import os
 import base64
 import cv2
@@ -106,6 +106,7 @@ def compare_auto():
         "matched_with": best_standard_name,
         "similarity": round(best_score, 4),
         "diff_image_url": image_url,
+        "image": image_url,  # ✅ Coze-friendly 字段，自动渲染图片
         "differences": differences
     })
 
