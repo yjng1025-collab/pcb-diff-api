@@ -1,117 +1,119 @@
-from flask import Flask, request, jsonify, send_from_directory
 import os
-import base64
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import cv2
 import numpy as np
-import requests
-from io import BytesIO
 from skimage.metrics import structural_similarity as ssim
-from werkzeug.utils import secure_filename
+import base64
+from io import BytesIO
+from PIL import Image
 
 app = Flask(__name__)
+CORS(app)
+
 UPLOAD_FOLDER = 'uploads'
 STANDARD_FOLDER = 'standard_boards'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# 创建必要的目录
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(STANDARD_FOLDER, exist_ok=True)
-os.makedirs("static", exist_ok=True)
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def compare_images(img1_path, img2_path):
-    img1 = cv2.imread(img1_path)
-    img2 = cv2.imread(img2_path)
-
+def compare_images(img1, img2):
+    # Resize images to same size if needed
     if img1.shape != img2.shape:
         img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
     gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+
     score, diff = ssim(gray1, gray2, full=True)
     diff = (diff * 255).astype("uint8")
 
-    thresh = cv2.threshold(diff, 200, 255, cv2.THRESH_BINARY_INV)[1]
+    thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    output = img2.copy()
-    diff_coords = []
+    annotated = img2.copy()
+    diff_boxes = []
 
     for c in contours:
-        (x, y, w, h) = cv2.boundingRect(c)
-        diff_coords.append({"x": int(x), "y": int(y), "w": int(w), "h": int(h)})
-        cv2.rectangle(output, (x, y), (x + w, y + h), (0, 0, 255), 2)
+        x, y, w, h = cv2.boundingRect(c)
+        if w * h < 100:  # skip tiny noise
+            continue
+        cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 0, 255), 2)
+        diff_boxes.append({'x': int(x), 'y': int(y), 'w': int(w), 'h': int(h)})
 
-    _, buffer = cv2.imencode('.jpg', output)
-    encoded_output = base64.b64encode(buffer).decode('utf-8')
-    return score, encoded_output, diff_coords
+    return annotated, score, diff_boxes
+
+
+def encode_image(img):
+    _, buffer = cv2.imencode('.jpg', img)
+    img_base64 = base64.b64encode(buffer).decode('utf-8')
+    return img_base64
+
 
 @app.route('/')
-def index():
-    return "PCB Compare Tool is running."
+def home():
+    return "PCB Compare API is running."
+
+
+@app.route('/compare', methods=['POST'])
+def compare():
+    if 'student' not in request.files or 'standard' not in request.files:
+        return jsonify({'error': 'Missing images'}), 400
+
+    student_file = request.files['student']
+    standard_file = request.files['standard']
+
+    student_img = cv2.imdecode(np.frombuffer(student_file.read(), np.uint8), cv2.IMREAD_COLOR)
+    standard_img = cv2.imdecode(np.frombuffer(standard_file.read(), np.uint8), cv2.IMREAD_COLOR)
+
+    result_img, score, boxes = compare_images(standard_img, student_img)
+    encoded_result = encode_image(result_img)
+
+    return jsonify({
+        'ssim_score': round(score, 4),
+        'diff_image': encoded_result,
+        'difference_boxes': boxes
+    })
+
 
 @app.route('/compare_auto', methods=['POST'])
 def compare_auto():
-    # Try multipart form first
-    if 'image' in request.files:
-        image = request.files['image']
-        if image.filename == '' or not allowed_file(image.filename):
-            return jsonify({'error': 'Invalid file'}), 400
-        filename = secure_filename(image.filename)
-        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        image.save(upload_path)
+    if 'image' not in request.files:
+        return jsonify({'error': 'Missing student image'}), 400
 
-    else:
-        # Try to load from JSON with image URL
-        data = request.get_json(silent=True)
-        if not data or 'image' not in data:
-            return jsonify({'error': 'No image uploaded'}), 400
+    student_file = request.files['image']
+    student_img = cv2.imdecode(np.frombuffer(student_file.read(), np.uint8), cv2.IMREAD_COLOR)
 
-        image_url = data['image']
-        try:
-            response = requests.get(image_url)
-            if response.status_code != 200:
-                return jsonify({'error': 'Failed to download image'}), 400
-
-            image_data = BytesIO(response.content)
-            filename = 'downloaded_image.jpg'
-            upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            with open(upload_path, 'wb') as f:
-                f.write(image_data.read())
-
-        except Exception as e:
-            return jsonify({'error': f'Error downloading image: {str(e)}'}), 400
-
-    # Compare with standard images
     best_score = -1
     best_result = None
+    best_filename = None
 
-    for std_file in os.listdir(STANDARD_FOLDER):
-        if not allowed_file(std_file):
+    for filename in os.listdir(STANDARD_FOLDER):
+        if not filename.lower().endswith(('.jpg', '.png', '.jpeg')):
             continue
+        path = os.path.join(STANDARD_FOLDER, filename)
+        standard_img = cv2.imread(path)
 
-        std_path = os.path.join(STANDARD_FOLDER, std_file)
-        score, output_image, diff_coords = compare_images(std_path, upload_path)
+        try:
+            result_img, score, boxes = compare_images(standard_img, student_img)
+            if score > best_score:
+                best_score = score
+                best_result = {
+                    'ssim_score': round(score, 4),
+                    'diff_image': encode_image(result_img),
+                    'difference_boxes': boxes,
+                    'matched_standard': filename
+                }
+        except Exception as e:
+            continue  # Skip images that fail to compare
 
-        if score > best_score:
-            best_score = score
-            best_result = {
-                "similarity": score,
-                "diff_coordinates": diff_coords,
-                "result_image_base64": output_image,
-                "standard_used": std_file
-            }
+    if best_result is None:
+        return jsonify({'error': 'No valid standard images found.'}), 500
 
     return jsonify(best_result)
 
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory('static', filename)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=8000)
 
 
