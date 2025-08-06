@@ -29,7 +29,7 @@ def load_image_from_url(url):
         return None
 
 def compare_images(img1, img2):
-    MIN_AREA = 1000  # 忽略小于这个面积的差异区域（可根据需要调整）
+    MIN_AREA = 1200  # 忽略小于这个面积的差异区域（可根据需要调整）
 
     img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
