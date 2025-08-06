@@ -6,16 +6,18 @@ import numpy as np
 import requests
 from io import BytesIO
 from skimage.metrics import structural_similarity as ssim
+from datetime import datetime
 
 app = Flask(__name__)
 
 STANDARD_FOLDER = 'standard_boards'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
+# 确保 static 文件夹存在
+os.makedirs("static", exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 def load_image_from_url(url):
     try:
@@ -26,22 +28,18 @@ def load_image_from_url(url):
         print(f"Error loading image from URL: {e}")
         return None
 
-
 def compare_images(img1, img2):
     img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    # Resize to same dimensions
     height = min(img1_gray.shape[0], img2_gray.shape[0])
     width = min(img1_gray.shape[1], img2_gray.shape[1])
     img1_gray = cv2.resize(img1_gray, (width, height))
     img2_gray = cv2.resize(img2_gray, (width, height))
 
-    # Compute SSIM and diff
     score, diff = ssim(img1_gray, img2_gray, full=True)
     diff = (diff * 255).astype("uint8")
 
-    # Threshold the diff
     thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -56,7 +54,6 @@ def compare_images(img1, img2):
             differences.append({"x": int(x), "y": int(y), "width": int(w), "height": int(h)})
 
     return result_img, score, differences
-
 
 @app.route("/compare_auto", methods=["POST"])
 def compare_auto():
@@ -92,21 +89,27 @@ def compare_auto():
     if best_result is None:
         return jsonify({"error": "No valid standard images found"}), 500
 
-    _, img_encoded = cv2.imencode('.jpg', best_result)
-    img_base64 = base64.b64encode(img_encoded).decode('utf-8')
+    # ✅ 保存为唯一文件名（加时间戳）
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    output_filename = f"diff_{timestamp}.jpg"
+    output_path = os.path.join("static", output_filename)
+    cv2.imwrite(output_path, best_result)
+
+    # ✅ 构造 URL
+    server_url = request.host_url.rstrip("/")  # 去除末尾斜杠
+    image_url = f"{server_url}/static/{output_filename}"
 
     return jsonify({
         "matched_with": best_standard_name,
         "similarity": round(best_score, 4),
-        "diff_image": img_base64,
+        "diff_image_url": image_url,
         "differences": differences
     })
-
 
 @app.route("/", methods=["GET"])
 def root():
     return "<h2>PCB Diff API 正常运行</h2><p>使用 POST /compare_auto 上传学生图片 URL 并自动比对。</p>"
 
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
+
