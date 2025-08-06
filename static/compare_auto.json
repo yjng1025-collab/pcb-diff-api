@@ -36,17 +36,30 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "diff_image_base64": {
-                      "type": "string",
-                      "description": "打标后的差异图（Base64）"
+                    "similarity": {
+                      "type": "number",
+                      "description": "两张图片的相似度得分"
                     },
-                    "diff_coords": {
+                    "diff_coordinates": {
                       "type": "array",
                       "items": {
-                        "type": "array",
-                        "items": { "type": "integer" }
+                        "type": "object",
+                        "properties": {
+                          "x": { "type": "integer" },
+                          "y": { "type": "integer" },
+                          "w": { "type": "integer" },
+                          "h": { "type": "integer" }
+                        }
                       },
-                      "description": "差异区域的坐标列表"
+                      "description": "差异区域的坐标"
+                    },
+                    "result_image_base64": {
+                      "type": "string",
+                      "description": "标记差异后的图片（Base64 编码）"
+                    },
+                    "standard_used": {
+                      "type": "string",
+                      "description": "使用的标准电路板文件名"
                     }
                   }
                 }
@@ -58,3 +71,4 @@
     }
   }
 }
+
