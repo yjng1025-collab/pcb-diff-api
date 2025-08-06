@@ -3,6 +3,8 @@ import os
 import base64
 import cv2
 import numpy as np
+import requests
+from io import BytesIO
 from skimage.metrics import structural_similarity as ssim
 from werkzeug.utils import secure_filename
 
@@ -53,17 +55,37 @@ def index():
 
 @app.route('/compare_auto', methods=['POST'])
 def compare_auto():
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image uploaded'}), 400
+    # Try multipart form first
+    if 'image' in request.files:
+        image = request.files['image']
+        if image.filename == '' or not allowed_file(image.filename):
+            return jsonify({'error': 'Invalid file'}), 400
+        filename = secure_filename(image.filename)
+        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        image.save(upload_path)
 
-    image = request.files['image']
-    if image.filename == '' or not allowed_file(image.filename):
-        return jsonify({'error': 'Invalid file'}), 400
+    else:
+        # Try to load from JSON with image URL
+        data = request.get_json(silent=True)
+        if not data or 'image' not in data:
+            return jsonify({'error': 'No image uploaded'}), 400
 
-    filename = secure_filename(image.filename)
-    upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    image.save(upload_path)
+        image_url = data['image']
+        try:
+            response = requests.get(image_url)
+            if response.status_code != 200:
+                return jsonify({'error': 'Failed to download image'}), 400
 
+            image_data = BytesIO(response.content)
+            filename = 'downloaded_image.jpg'
+            upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            with open(upload_path, 'wb') as f:
+                f.write(image_data.read())
+
+        except Exception as e:
+            return jsonify({'error': f'Error downloading image: {str(e)}'}), 400
+
+    # Compare with standard images
     best_score = -1
     best_result = None
 
@@ -91,4 +113,5 @@ def static_files(filename):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
