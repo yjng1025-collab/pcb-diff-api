@@ -1,112 +1,93 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, render_template
 import os
-import base64
 import cv2
 import numpy as np
-import requests
-from io import BytesIO
 from skimage.metrics import structural_similarity as ssim
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
+UPLOAD_FOLDER = 'uploads'
 STANDARD_FOLDER = 'standard_boards'
+STATIC_FOLDER = 'static'
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(STANDARD_FOLDER, exist_ok=True)
+os.makedirs(STATIC_FOLDER, exist_ok=True)
+
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
-
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
-def load_image_from_url(url):
-    try:
-        response = requests.get(url, timeout=10)
-        image = cv2.imdecode(np.frombuffer(response.content, np.uint8), cv2.IMREAD_COLOR)
-        return image
-    except Exception as e:
-        print(f"Error loading image from URL: {e}")
-        return None
-
-
-def compare_images(img1, img2):
+def calculate_similarity(img1, img2):
     img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    # Resize to same dimensions
-    height = min(img1_gray.shape[0], img2_gray.shape[0])
-    width = min(img1_gray.shape[1], img2_gray.shape[1])
-    img1_gray = cv2.resize(img1_gray, (width, height))
-    img2_gray = cv2.resize(img2_gray, (width, height))
+    img2_resized = cv2.resize(img2_gray, (img1_gray.shape[1], img1_gray.shape[0]))
 
-    # Compute SSIM and diff
-    score, diff = ssim(img1_gray, img2_gray, full=True)
+    score, diff = ssim(img1_gray, img2_resized, full=True)
     diff = (diff * 255).astype("uint8")
 
-    # Threshold the diff
     thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    result_img = img2.copy()
-    result_img = cv2.resize(result_img, (width, height))
-    differences = []
+    img2_marked = cv2.resize(img2.copy(), (img1.shape[1], img1.shape[0]))
+    for c in contours:
+        (x, y, w, h) = cv2.boundingRect(c)
+        cv2.rectangle(img2_marked, (x, y), (x + w, y + h), (0, 0, 255), 2)
 
-    for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        if w > 10 and h > 10:
-            cv2.rectangle(result_img, (x, y), (x + w, y + h), (0, 0, 255), 2)
-            differences.append({"x": int(x), "y": int(y), "width": int(w), "height": int(h)})
+    return score, img2_marked
 
-    return result_img, score, differences
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-
-@app.route("/compare_auto", methods=["POST"])
+@app.route('/compare_auto', methods=['POST'])
 def compare_auto():
-    data = request.get_json()
+    if 'image' not in request.files:
+        return jsonify({'error': 'Missing image'}), 400
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({'error': 'No selected image'}), 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
 
-    if not data or "image" not in data:
-        return jsonify({"error": "Missing image"}), 400
+        student_img = cv2.imread(filepath)
+        best_score = -1
+        best_img = None
+        best_standard_name = None
 
-    student_img_url = data["image"]
-    student_img = load_image_from_url(student_img_url)
-    if student_img is None:
-        return jsonify({"error": "Failed to load student image"}), 400
+        for std_name in os.listdir(STANDARD_FOLDER):
+            std_path = os.path.join(STANDARD_FOLDER, std_name)
+            if allowed_file(std_name):
+                std_img = cv2.imread(std_path)
+                try:
+                    score, _ = calculate_similarity(student_img, std_img)
+                except Exception:
+                    continue
+                if score > best_score:
+                    best_score = score
+                    best_img = std_img
+                    best_standard_name = std_name
 
-    best_score = -1
-    best_result = None
-    best_standard_name = None
-    differences = []
+        if best_img is None:
+            return jsonify({'error': 'No valid standard image found'}), 500
 
-    for filename in os.listdir(STANDARD_FOLDER):
-        if allowed_file(filename):
-            standard_path = os.path.join(STANDARD_FOLDER, filename)
-            standard_img = cv2.imread(standard_path)
-            if standard_img is None:
-                continue
+        score, diff_img = calculate_similarity(student_img, best_img)
 
-            result_img, score, diffs = compare_images(student_img, standard_img)
-            if score > best_score:
-                best_score = score
-                best_result = result_img
-                best_standard_name = filename
-                differences = diffs
+        output_path = os.path.join(STATIC_FOLDER, 'diff_result.jpg')
+        cv2.imwrite(output_path, diff_img)
 
-    if best_result is None:
-        return jsonify({"error": "No valid standard images found"}), 500
+        return jsonify({
+            'similarity': round(score, 3),
+            'diff_image_url': request.url_root + 'static/diff_result.jpg'
+        })
 
-    _, img_encoded = cv2.imencode('.jpg', best_result)
-    img_base64 = base64.b64encode(img_encoded).decode('utf-8')
+    return jsonify({'error': 'Invalid file'}), 400
 
-    return jsonify({
-        "matched_with": best_standard_name,
-        "similarity": round(best_score, 4),
-        "diff_image": img_base64,
-        "differences": differences
-    })
-
-
-@app.route("/", methods=["GET"])
-def root():
-    return "<h2>PCB Diff API 正常运行</h2><p>使用 POST /compare_auto 上传学生图片 URL 并自动比对。</p>"
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+if __name__ == '__main__':
+    app.run(debug=True)
