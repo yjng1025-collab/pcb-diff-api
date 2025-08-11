@@ -29,43 +29,30 @@ def load_image_from_url(url):
         return None
 
 def compare_images(img1, img2):
-    MIN_AREA = 200   # Ignore very small differences
-    MAX_AREA_RATIO = 0.85  # Ignore if a blob covers >85% of image
+    MIN_AREA = 200  # 忽略小于这个面积的差异区域（可根据需要调整）
 
-    # Convert to grayscale
     img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    # Resize to smallest common size
     height = min(img1_gray.shape[0], img2_gray.shape[0])
     width = min(img1_gray.shape[1], img2_gray.shape[1])
     img1_gray = cv2.resize(img1_gray, (width, height))
     img2_gray = cv2.resize(img2_gray, (width, height))
 
-    # Compute SSIM
     score, diff = ssim(img1_gray, img2_gray, full=True)
     diff = (diff * 255).astype("uint8")
 
-    # Blur to remove small variations (lighting, texture)
-    diff_blur = cv2.GaussianBlur(diff, (5, 5), 0)
-
-    # Threshold
-    thresh = cv2.threshold(diff_blur, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
-
-    # Find contours
+    thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    result_img = cv2.resize(img2.copy(), (width, height))
+    result_img = img2.copy()
+    result_img = cv2.resize(result_img, (width, height))
     differences = []
 
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
         area = cv2.contourArea(contour)
-
         if w > 10 and h > 10 and area >= MIN_AREA:
-            # Skip if it's basically the entire image
-            if area / (width * height) > MAX_AREA_RATIO:
-                continue
             cv2.rectangle(result_img, (x, y), (x + w, y + h), (0, 0, 255), 2)
             differences.append({"x": int(x), "y": int(y), "width": int(w), "height": int(h)})
 
