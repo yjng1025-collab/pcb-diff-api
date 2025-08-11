@@ -1,10 +1,8 @@
-from flask import Flask, request, jsonify  
+from flask import Flask, request, jsonify
 import os
-import base64
 import cv2
 import numpy as np
 import requests
-from io import BytesIO
 from skimage.metrics import structural_similarity as ssim
 from datetime import datetime
 
@@ -12,8 +10,8 @@ app = Flask(__name__)
 
 STANDARD_FOLDER = 'standard_boards'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+FIXED_SIZE = (800, 800)  # Width, Height
 
-# 确保 static 文件夹存在
 os.makedirs("static", exist_ok=True)
 
 def allowed_file(filename):
@@ -28,16 +26,27 @@ def load_image_from_url(url):
         print(f"Error loading image from URL: {e}")
         return None
 
+def resize_with_padding(img, target_size):
+    target_w, target_h = target_size
+    h, w = img.shape[:2]
+    scale = min(target_w / w, target_h / h)
+    new_w, new_h = int(w * scale), int(h * scale)
+
+    resized = cv2.resize(img, (new_w, new_h))
+    result = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+    x_offset = (target_w - new_w) // 2
+    y_offset = (target_h - new_h) // 2
+    result[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
+    return result
+
 def compare_images(img1, img2):
-    MIN_AREA = 1200  # 忽略小于这个面积的差异区域（可根据需要调整）
+    MIN_AREA = 1200
 
-    img1_gray = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-    img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    img1_resized = resize_with_padding(img1, FIXED_SIZE)
+    img2_resized = resize_with_padding(img2, FIXED_SIZE)
 
-    height = min(img1_gray.shape[0], img2_gray.shape[0])
-    width = min(img1_gray.shape[1], img2_gray.shape[1])
-    img1_gray = cv2.resize(img1_gray, (width, height))
-    img2_gray = cv2.resize(img2_gray, (width, height))
+    img1_gray = cv2.cvtColor(img1_resized, cv2.COLOR_BGR2GRAY)
+    img2_gray = cv2.cvtColor(img2_resized, cv2.COLOR_BGR2GRAY)
 
     score, diff = ssim(img1_gray, img2_gray, full=True)
     diff = (diff * 255).astype("uint8")
@@ -45,8 +54,7 @@ def compare_images(img1, img2):
     thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    result_img = img2.copy()
-    result_img = cv2.resize(result_img, (width, height))
+    result_img = img2_resized.copy()
     differences = []
 
     for contour in contours:
@@ -92,17 +100,14 @@ def compare_auto():
     if best_result is None:
         return jsonify({"error": "No valid standard images found"}), 500
 
-    # ✅ 保存为唯一文件名（加时间戳）
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     output_filename = f"diff_{timestamp}.jpg"
     output_path = os.path.join("static", output_filename)
     cv2.imwrite(output_path, best_result)
 
-    # ✅ 构造 URL
-    server_url = request.host_url.rstrip("/")  # 去除末尾斜杠
+    server_url = request.host_url.rstrip("/")
     image_url = f"{server_url}/static/{output_filename}"
 
-    # ✅ 生成差异描述（description）
     num_diffs = len(differences)
     if num_diffs == 0:
         description = "未发现明显差异"
@@ -117,9 +122,9 @@ def compare_auto():
         "matched_with": best_standard_name,
         "similarity": round(best_score, 4),
         "diff_image_url": image_url,
-        "image": image_url,  # ✅ Coze-friendly 字段，自动渲染图片
+        "image": image_url,
         "differences": differences,
-        "description": description  # ✅ 新增字段
+        "description": description
     })
 
 @app.route("/", methods=["GET"])
@@ -128,4 +133,5 @@ def root():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
+
 
