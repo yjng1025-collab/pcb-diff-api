@@ -29,7 +29,7 @@ def load_image_from_url(url):
         return None
 
 def compare_images(img1, img2):
-    MIN_AREA = 1200   # Ignore very small differences
+    MIN_AREA = 200   # Ignore very small differences
     MAX_AREA_RATIO = 0.85  # Ignore if a blob covers >85% of image
 
     # Convert to grayscale
